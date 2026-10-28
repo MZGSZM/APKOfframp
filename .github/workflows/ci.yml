@@ -26,7 +26,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       # The copyparty end-to-end tests run against a throwaway server.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - name: Install copyparty
