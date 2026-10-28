@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">APK Offramp</string>
+    <!-- One place for the repository URL. The README and release notes use the same address. -->
+    <string name="github_url" translatable="false">https://github.com/MZGSZM/APKOfframp</string>
+
+    <string name="group_uploads">Uploads</string>
+    <string name="group_monitoring">Monitoring</string>
+    <string name="ch_progress">In progress</string>
+    <string name="ch_progress_desc">The ongoing notification for a running upload, with progress and Cancel</string>
+    <string name="ch_completed">Completed</string>
+    <string name="ch_completed_desc">A new version was uploaded, with a Copy link action</string>
+    <string name="ch_attention">Needs attention</string>
+    <string name="ch_attention_desc">Failed uploads, rejected passwords, missing permissions, and changed signing certificates</string>
+    <string name="ch_instant">Instant mode</string>
+    <string name="ch_instant_desc">The permanent notification while instant mode runs</string>
+</resources>

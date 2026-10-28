@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Logo palette: the only fixed colors. -->
+    <color name="logo_background">#10313B</color>
+    <color name="logo_mark">#E6EFEA</color>
+    <color name="logo_accent">#F0A63A</color>
+    <color name="window_background">#F5FAFC</color>
+</resources>

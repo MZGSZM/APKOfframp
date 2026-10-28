@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- White-only silhouette for the notification small icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="66"
+    android:viewportHeight="66">
+    <group
+        android:translateX="-21"
+        android:translateY="-21">
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:scaleX="1.12"
+            android:scaleY="1.12">
+            <!-- road -->
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M41,30 A6,6 0 0,1 47,36 L47,72 A6,6 0 0,1 35,72 L35,36 A6,6 0 0,1 41,30 Z" />
+            <!-- ramp -->
+            <path
+                android:pathData="M41,70 C56,70 64,63 67.5,52"
+                android:strokeColor="#FFFFFFFF"
+                android:strokeLineCap="round"
+                android:strokeWidth="10" />
+            <!-- arrowhead -->
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M73.3,33.9 L77.4,57.2 L56.4,50.6 Z"
+                android:strokeColor="#FFFFFFFF"
+                android:strokeLineJoin="round"
+                android:strokeWidth="2" />
+        </group>
+    </group>
+</vector>

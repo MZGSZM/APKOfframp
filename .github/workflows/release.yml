@@ -1,0 +1,98 @@
+name: Release
+
+# Runs only on a pushed tag such as v1.2.3. Tags come from people with push access,
+# never from forks, so the signing secrets are never exposed to outside code.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) printf 'Tag %s is not like v1.2.3\n' "$tag" >&2; exit 1 ;;
+          esac
+          version="${tag#v}"
+          printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { printf 'Bad version %s\n' "$version" >&2; exit 1; }
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Decode the keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.OFFRAMP_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            printf 'OFFRAMP_KEYSTORE_BASE64 is not set\n' >&2
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build the signed release APK
+        env:
+          OFFRAMP_KEYSTORE: ${{ runner.temp }}/release.jks
+          OFFRAMP_KEYSTORE_PASSWORD: ${{ secrets.OFFRAMP_KEYSTORE_PASSWORD }}
+          OFFRAMP_KEY_ALIAS: ${{ secrets.OFFRAMP_KEY_ALIAS }}
+          OFFRAMP_KEY_PASSWORD: ${{ secrets.OFFRAMP_KEY_PASSWORD }}
+        run: ./gradlew --stacktrace :app:assembleRelease -PofframpVersion=${{ steps.version.outputs.version }}
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/release.jks"
+
+      # A wrong or missing key must never publish: compare the certificate with the stored digest.
+      - name: Verify the signature and certificate
+        env:
+          EXPECTED: ${{ vars.OFFRAMP_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          [ -f "$apk" ] || { printf 'No signed APK at %s (unsigned build?)\n' "$apk" >&2; exit 1; }
+          bt=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$bt/apksigner" verify --verbose "$apk"
+          actual=$("$bt/apksigner" verify --print-certs "$apk" | LC_ALL=C sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+          norm() { printf '%s' "$1" | tr -d ': ' | tr '[:upper:]' '[:lower:]'; }
+          if [ -z "$EXPECTED" ]; then
+            printf 'Repository variable OFFRAMP_CERT_SHA256 is not set. This build signed with: %s\n' "$actual" >&2
+            exit 1
+          fi
+          if [ "$(norm "$actual")" != "$(norm "$EXPECTED")" ]; then
+            printf 'Certificate mismatch.\n  expected %s\n  got      %s\n' "$EXPECTED" "$actual" >&2
+            exit 1
+          fi
+          printf 'Certificate OK: %s\n' "$actual"
+
+      - name: Name the APK and write its checksum
+        run: |
+          set -euo pipefail
+          out="apkofframp-${{ steps.version.outputs.version }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$out"
+          sha256sum "$out" > "$out.sha256"
+
+      - name: Publish the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apkofframp-${{ steps.version.outputs.version }}.apk
+            apkofframp-${{ steps.version.outputs.version }}.apk.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true

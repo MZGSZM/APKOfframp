@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  APK Offramp logo, master artwork. 108x108 canvas matching the adaptive icon.
+  Everything that matters stays inside the central 66-unit circle (r=33 around 54,54).
+  Road: a straight vertical bar. Ramp: a branch curving off to the right and up,
+  ending in an amber arrowhead that points away from the road.
+  Palette: background #10313B, mark #E6EFEA, accent #F0A63A.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" fill="#10313B"/>
+  <g transform="translate(54 54) scale(1.12) translate(-54 -54)">
+  <!-- road -->
+  <rect x="35" y="30" width="12" height="48" rx="6" fill="#E6EFEA"/>
+  <!-- ramp -->
+  <path d="M41,70 C56,70 64,63 67.5,52" fill="none" stroke="#E6EFEA" stroke-width="10" stroke-linecap="round"/>
+  <!-- arrowhead -->
+  <path d="M73.3,33.9 L77.4,57.2 L56.4,50.6 Z" fill="#F0A63A" stroke="#F0A63A" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+</svg>

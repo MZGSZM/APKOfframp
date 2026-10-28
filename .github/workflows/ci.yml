@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      # The copyparty end-to-end tests run against a throwaway server.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Install copyparty
+        run: python -m pip install --upgrade copyparty
+
+      - name: Lint, unit tests, debug build
+        env:
+          REQUIRE_COPYPARTY: "1"
+          COPYPARTY_PYTHON: python
+        run: ./gradlew --stacktrace :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: apkofframp-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
