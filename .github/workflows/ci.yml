@@ -39,7 +39,7 @@ jobs:
         run: ./gradlew --stacktrace :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: apkofframp-debug
           path: app/build/outputs/apk/debug/*.apk
@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload reports
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: reports
           path: |
