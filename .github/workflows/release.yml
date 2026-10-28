@@ -89,7 +89,7 @@ jobs:
           sha256sum "$out" > "$out.sha256"
 
       - name: Publish the GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             apkofframp-${{ steps.version.outputs.version }}.apk
