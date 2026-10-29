@@ -46,8 +46,21 @@ Only the copyparty destinations you add. No Google APIs, no Play Services or Fir
 
    `Release certificate SHA-256: 61:B6:41:BC:5D:4D:95:E1:18:3F:60:DA:4B:26:DB:81:21:6F:32:FE:BE:A9:EE:36:32:AE:37:BD:69:27:45:C6`
 
-4. On the phone, allow your browser or file manager to install unknown apps, since that is how sideloading works.
-5. Open the APK and install it.
+4. Optional: check the build provenance, which proves the APK was built by this repo's release workflow from the tagged commit and not on someone's laptop. Download `apkofframp-X.Y.Z.apk.sigstore.json` from the same release, then:
+
+   ```
+   cosign verify-blob-attestation \
+     --bundle apkofframp-X.Y.Z.apk.sigstore.json \
+     --new-bundle-format \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     --certificate-identity-regexp '^https://github\.com/MZGSZM/APKOfframp/\.github/workflows/release\.yml@refs/tags/v' \
+     apkofframp-X.Y.Z.apk
+   ```
+
+   You need [cosign](https://github.com/sigstore/cosign) 2.4 or newer. The binary from its releases page is the safe bet, since distro packages can lag behind. `Verified OK` means the signature checks out; anything else, do not install it. If you do use the GitHub CLI, `gh attestation verify apkofframp-X.Y.Z.apk --repo MZGSZM/APKOfframp` does the same check. Every attestation is also listed on the repository's Attestations page.
+
+5. On the phone, allow your browser or file manager to install unknown apps, since that is how sideloading works.
+6. Open the APK and install it.
 
 To keep Offramp itself updated, add `https://github.com/MZGSZM/APKOfframp` to ObtainX as a GitHub source. ObtainX picks up each new release from there.
 
@@ -92,7 +105,6 @@ KEEP THE FOLDER PRIVATE. It holds copies of paid apps, and a copied link works f
 2. Use the app folder URL, such as `https://files.example.com/apks/com.example.app/`. The folder page lists only the current file, because `older/` shows up as a folder link.
 3. For a split app, set the link filter to match `.apks`. The default filter only matches `.apk`.
 
-
 ## Settings
 
 | Setting | Default |
@@ -132,7 +144,7 @@ GitHub Actions has three workflows:
 
 - **CI** on every push and pull request: lint, unit tests (with copyparty), debug build. The debug APK is attached to the run.
 - **Emulator tests** on pull requests and `main`: instrumented tests on an API 35 emulator with KVM.
-- **Release** on a pushed tag like `v1.2.3`: builds the signed APK, checks its certificate, and publishes a GitHub Release with the APK and its `.sha256`.
+- **Release** on a pushed tag like `v1.2.3`: builds the signed APK, checks its certificate, creates a signed build provenance attestation, and publishes a GitHub Release with the APK, its `.sha256`, and the attestation bundle (`.sigstore.json`). Attestations only work on public repositories unless the account has GitHub Enterprise Cloud.
 
 The version name comes from the tag. The version code is `major * 1000000 + minor * 1000 + patch`, so it always goes up.
 
