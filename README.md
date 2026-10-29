@@ -44,7 +44,7 @@ Only the copyparty destinations you add. No Google APIs, no Play Services or Fir
 2. Check the download: `sha256sum -c apkofframp-X.Y.Z.apk.sha256`.
 3. Check the signing certificate: `apksigner verify --print-certs apkofframp-X.Y.Z.apk`. The `SHA-256 digest` line must match:
 
-   `Release certificate SHA-256: (add the digest here after the first signed release)`
+   `Release certificate SHA-256: 61:B6:41:BC:5D:4D:95:E1:18:3F:60:DA:4B:26:DB:81:21:6F:32:FE:BE:A9:EE:36:32:AE:37:BD:69:27:45:C6`
 
 4. On the phone, allow your browser or file manager to install unknown apps, since that is how sideloading works.
 5. Open the APK and install it.
@@ -150,7 +150,7 @@ The version name comes from the tag. The version code is `major * 1000000 + mino
 7. Delete `keystore.b64`.
 8. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
 
-The release job decodes the keystore into a temp file, deletes it after the build, and refuses to publish if the APK's certificate does not match `OFFRAMP_CERT_SHA256`. Only that job gets write access to the repository. Put the digest in the Install section above once you have it.
+The release job decodes the keystore into a temp file, deletes it after the build, and refuses to publish if the APK's certificate does not match `OFFRAMP_CERT_SHA256`. Only that job gets write access to the repository.
 
 Dependabot opens weekly pull requests for Gradle dependencies and Actions, and CI has to pass on each before you merge.
 
