@@ -2,7 +2,7 @@
 
 ![APK Offramp](docs/social-preview.png)
 
-APK Offramp copies app updates off a phone that has Play Services and uploads them to your own copyparty server, so a second device without Play Services can install them with ObtainX or Obtainium. Designed with ObtainX in mind so behavior may be different in the upstream Obtainium.
+APK Offramp copies app updates off a phone that has Play Services and uploads them to your own copyparty server, so a second device without Play Services can install them with ObtainX.
 
 It never talks to Google. The Play Store on your phone does the updating, and Offramp only reads the APK files that are already installed. No root, no Shizuku, no accessibility tricks.
 
@@ -69,7 +69,7 @@ Now Offramp checks your apps on its own, uploads each new version, and shows the
 I run copyparty with one private volume for this. Something like:
 
 ```
-copyparty -a zack:yourpassword -v /srv/apks:apks:rwmd.,zack -e2d
+copyparty -a username:yourpassword -v /srv/apks:apks:rwmd.,username -e2d
 ```
 
 | Permission | Used for |
@@ -92,7 +92,6 @@ KEEP THE FOLDER PRIVATE. It holds copies of paid apps, and a copied link works f
 2. Use the app folder URL, such as `https://files.example.com/apks/com.example.app/`. The folder page lists only the current file, because `older/` shows up as a folder link.
 3. For a split app, set the link filter to match `.apks`. The default filter only matches `.apk`.
 
-How ObtainX should log in to a private folder (password in the URL, basic auth, or a header) is still an open question. Try it against your server.
 
 ## Settings
 
@@ -185,5 +184,6 @@ app/src/main/java/com/mzgszm/apkofframp/
   notify/        channels, notifications, Copy link
   ui/            Compose screens and theme
 testapp/         tiny app the emulator test installs at two versions
-design/logo.svg  master logo; launcher and notification icons are generated from it
+design/          logo.svg plus generate_icons.py, which writes logo.svg and the launcher,
+                 themed and notification icons from one geometry (needs: pip install shapely)
 ```
