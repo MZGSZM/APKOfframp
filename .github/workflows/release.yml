@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write
+      contents: write           # create the GitHub Release
+      id-token: write           # let the attestation step get a short-lived signing certificate
+      attestations: write       # store the attestation on GitHub
+      artifact-metadata: write  # record the attested APK as a build artifact
     steps:
       - uses: actions/checkout@v7
 
@@ -69,7 +72,15 @@ jobs:
           [ -f "$apk" ] || { printf 'No signed APK at %s (unsigned build?)\n' "$apk" >&2; exit 1; }
           bt=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
           "$bt/apksigner" verify --verbose "$apk"
-          actual=$("$bt/apksigner" verify --print-certs "$apk" | LC_ALL=C sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+          certs=$(LC_ALL=C "$bt/apksigner" verify --print-certs "$apk" 2>&1)
+          printf '%s\n' "$certs"
+          # The line prefix differs between apksigner versions and signing schemes, so match the digest
+          # line by its label and take the 64 hex characters after it.
+          actual=$(printf '%s\n' "$certs" | LC_ALL=C grep -i 'SHA-256 digest' | head -n 1 | LC_ALL=C sed 's/.*[Dd]igest:[[:space:]]*//' | tr -d ': \r')
+          if ! printf '%s' "$actual" | LC_ALL=C grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            printf 'Could not read a SHA-256 certificate digest from apksigner output above (got "%s")\n' "$actual" >&2
+            exit 1
+          fi
           norm() { printf '%s' "$1" | tr -d ': ' | tr '[:upper:]' '[:lower:]'; }
           if [ -z "$EXPECTED" ]; then
             printf 'Repository variable OFFRAMP_CERT_SHA256 is not set. This build signed with: %s\n' "$actual" >&2
@@ -88,11 +99,23 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$out"
           sha256sum "$out" > "$out.sha256"
 
+      # Signed SLSA build provenance: proves this exact APK came out of this workflow,
+      # on this commit and tag. Stored on GitHub and attached to the release as a file.
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: apkofframp-${{ steps.version.outputs.version }}.apk
+
+      - name: Attach the attestation bundle
+        run: cp -- "${{ steps.attest.outputs.bundle-path }}" "apkofframp-${{ steps.version.outputs.version }}.apk.sigstore.json"
+
       - name: Publish the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             apkofframp-${{ steps.version.outputs.version }}.apk
             apkofframp-${{ steps.version.outputs.version }}.apk.sha256
+            apkofframp-${{ steps.version.outputs.version }}.apk.sigstore.json
           generate_release_notes: true
           fail_on_unmatched_files: true
