@@ -112,7 +112,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 }
             }
             val s = snap!!
-            val done: Extracted = extracted ?: error("unreachable")
+            // The loop only exits once extracted is set, and the compiler smart-casts it.
+            val done: Extracted = extracted
             g.extractor.cleanupOthers(pkg, s.versionCode)
 
             val certChanged = app.lastCertDigest != null && done.certDigest != null &&

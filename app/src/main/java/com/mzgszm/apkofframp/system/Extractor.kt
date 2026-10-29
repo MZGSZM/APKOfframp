@@ -106,7 +106,9 @@ class Extractor(private val context: Context, private val apps: InstalledApps) {
         val md = MessageDigest.getInstance("SHA-256")
         DigestInputStream(f.inputStream(), md).use { input ->
             val buf = ByteArray(256 * 1024)
-            while (input.read(buf) >= 0) Unit
+            while (true) {
+                if (input.read(buf) < 0) break
+            }
         }
         return md.digest().joinToString("") { "%02x".format(it) }
     }
