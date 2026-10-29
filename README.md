@@ -156,6 +156,18 @@ GitHub Actions has three workflows:
 
 The version name comes from the tag. The version code is `major * 1000000 + minor * 1000 + patch`, so it always goes up.
 
+### Cutting a release
+
+Release notes are written from git, so they only list what changed since the previous `v*.*.*` tag:
+
+1. Commit and push to `main` as usual. Each commit's subject line becomes one bullet in the notes, so write it for someone reading the release page.
+2. Tag the commit with an annotated tag: `git tag -a v1.2.3`. Your editor opens. The first line becomes the release summary and anything after a blank line goes under it.
+3. Push the tag: `git push origin v1.2.3`.
+
+The workflow finds the previous release tag on its own, lists every non-merge commit since then, and links the full diff. A plain `git tag v1.2.3` (or `-m v1.2.3`) works too; the notes just start at the commit list with no summary.
+
+DO NOT MOVE OR RE-PUSH AN OLD TAG. The notes are worked out from tag to tag, so rewriting one changes what the next release says.
+
 ### One-time signing setup
 
 1. Make the release keystore: `keytool -genkeypair -v -keystore offramp-release.jks -keyalg RSA -keysize 4096 -validity 10000 -alias offramp`

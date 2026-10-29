@@ -20,6 +20,8 @@ jobs:
       artifact-metadata: write  # record the attested APK as a build artifact
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history and tags, so the notes step can find the previous release
 
       - name: Read the version from the tag
         id: version
@@ -32,6 +34,43 @@ jobs:
           version="${tag#v}"
           printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { printf 'Bad version %s\n' "$version" >&2; exit 1; }
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      # Notes cover only what changed since the previous release: the tag's own message (if it is an
+      # annotated tag), then every commit between the previous v*.*.* tag and this one.
+      - name: Write the release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          # checkout can store an annotated tag as a lightweight one, losing its message. Fetch the real tag object.
+          git fetch --force --no-tags origin "refs/tags/${tag}:refs/tags/${tag}"
+          # Nearest earlier release tag reachable from this one. Empty on the first release.
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${tag}^" 2>/dev/null || true)
+          {
+            if [ "$(git cat-file -t "$tag")" = "tag" ]; then
+              subject=$(git tag -l --format='%(contents:subject)' "$tag")
+              body=$(git tag -l --format='%(contents:body)' "$tag" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')
+              # A message that only repeats the tag name says nothing, so skip it.
+              if [ -n "$subject" ] && [ "$subject" != "$tag" ]; then
+                printf '%s\n\n' "$subject"
+                if [ -n "$body" ]; then printf '%s\n\n' "$body"; fi
+              fi
+            fi
+            if [ -n "$prev" ]; then
+              printf '## Changes since %s\n\n' "$prev"
+              range="${prev}..${tag}"
+            else
+              printf '## Changes\n\n'
+              range="$tag"
+            fi
+            git log --no-merges --reverse --format='- %s (%h)' "$range"
+            if [ -n "$prev" ]; then
+              printf '\n**Full diff:** https://github.com/%s/compare/%s...%s\n' "$GITHUB_REPOSITORY" "$prev" "$tag"
+            fi
+          } > "$notes"
+          cat -- "$notes"
+          printf 'path=%s\n' "$notes" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v6
         with:
@@ -117,5 +156,5 @@ jobs:
             apkofframp-${{ steps.version.outputs.version }}.apk
             apkofframp-${{ steps.version.outputs.version }}.apk.sha256
             apkofframp-${{ steps.version.outputs.version }}.apk.sigstore.json
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
           fail_on_unmatched_files: true
