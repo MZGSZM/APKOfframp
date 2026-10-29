@@ -66,7 +66,11 @@ class NotificationsTest {
         notifier.attention("com.x.y", "Upload failed: Foo", "Server unreachable", retry = true)
         assertTrue(Channels.ATTENTION in channelsPosted())
 
-        val completed = nm.activeNotifications.first { it.notification.channelId == Channels.COMPLETED && !it.isGroup }
+        // isGroup is true for every member of a group, so pick the child by the summary flag instead.
+        val completed = nm.activeNotifications.first {
+            it.notification.channelId == Channels.COMPLETED &&
+                (it.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY) == 0
+        }
         assertEquals("Copy link", completed.notification.actions.single().title.toString())
     }
 }
