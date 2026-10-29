@@ -43,6 +43,26 @@ abstract class OfframpDao {
     @Query("UPDATE apps SET failedVersionCode = :code, status = 'FAILED', lastError = :error, progress = -1 WHERE packageName = :pkg")
     abstract suspend fun setPermanentFailure(pkg: String, code: Long, error: String)
 
+    // The writes below touch only their own columns. A whole-row upsert built from an earlier read
+    // can undo a change made in between, such as a destination picked while an upload was queued.
+
+    @Query("UPDATE apps SET destinationId = :destinationId, pathOverride = :pathOverride, keepVersions = :keep WHERE packageName = :pkg")
+    abstract suspend fun setAppSettings(pkg: String, destinationId: Long?, pathOverride: String?, keep: Int?)
+
+    @Query("UPDATE apps SET lastVersionCode = :code, lastVersionName = :name, status = 'UP_TO_DATE', lastError = NULL, progress = -1 WHERE packageName = :pkg")
+    abstract suspend fun setBaseline(pkg: String, code: Long, name: String?)
+
+    /** Clears a failure and marks the app pending, for Upload now and for a move to a new destination. */
+    @Query("UPDATE apps SET failedVersionCode = NULL, status = 'PENDING', lastError = NULL, progress = -1 WHERE packageName = :pkg")
+    abstract suspend fun markQueued(pkg: String)
+
+    @Query("UPDATE apps SET failedVersionCode = NULL, lastError = NULL WHERE packageName = :pkg")
+    abstract suspend fun clearFailure(pkg: String)
+
+    /** Forgets how far an earlier upload got, since that progress belongs to the old destination. */
+    @Query("UPDATE apps SET stage = 'NONE', stageVersionCode = NULL WHERE packageName = :pkg")
+    abstract suspend fun resetStage(pkg: String)
+
     /** Blocking, for the stage store that runs inside the upload thread. */
     @Query("UPDATE apps SET stage = :stage, stageVersionCode = :code WHERE packageName = :pkg")
     abstract fun setStageBlocking(pkg: String, code: Long, stage: String)
@@ -88,7 +108,9 @@ abstract class OfframpDao {
     @Transaction
     open suspend fun saveDestination(d: DestinationEntity): Long {
         val count = destinations().size
-        val makeDefault = d.isDefault || count == 0 || (count == 1 && d.id != 0L)
+        // Switching the default off on the default itself would leave none, and apps on "Default" would stall.
+        val wasDefault = d.id != 0L && destination(d.id)?.isDefault == true
+        val makeDefault = d.isDefault || wasDefault || count == 0 || (count == 1 && d.id != 0L)
         if (makeDefault) clearDefault()
         val row = d.copy(isDefault = makeDefault)
         return if (row.id == 0L) insertDestination(row) else { updateDestination(row); row.id }
@@ -145,7 +167,11 @@ abstract class OfframpDao {
     @Query("SELECT * FROM versions WHERE id = :id")
     abstract suspend fun version(id: Long): VersionEntity?
 
-    /** Records a finished upload: link updates from [Ledger], the new current version, the app row, and history. */
+    /**
+     * Records a finished upload: link updates from [Ledger], the new current version, the app row, and history.
+     * Only the upload columns of [app] are written. Destination, folder, versions kept and the enabled switch
+     * come from the row as it is now, so a setting changed during the upload survives.
+     */
     @Transaction
     open suspend fun recordPublished(
         app: AppEntity,
@@ -163,7 +189,21 @@ abstract class OfframpDao {
             updateVersion(v.copy(remotePath = u.remotePath, url = u.url, state = state))
         }
         newVersion?.let { insertVersion(it) }
-        upsertApp(app)
+        val now = app(app.packageName)
+        upsertApp(
+            now?.copy(
+                lastVersionCode = app.lastVersionCode,
+                lastVersionName = app.lastVersionName,
+                lastUploadTime = app.lastUploadTime,
+                lastCertDigest = app.lastCertDigest,
+                status = app.status,
+                lastError = app.lastError,
+                failedVersionCode = app.failedVersionCode,
+                progress = app.progress,
+                stage = app.stage,
+                stageVersionCode = app.stageVersionCode,
+            ) ?: app,
+        )
         updateUpload(upload)
     }
 }

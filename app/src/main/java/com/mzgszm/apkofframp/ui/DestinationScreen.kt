@@ -165,7 +165,11 @@ fun DestinationScreen(id: Long, onBack: () -> Unit) {
                 Text("The password and files travel in the clear over HTTP. Only use this on a network you trust.",
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            SwitchRow("Default destination", isDefault) { isDefault = it }
+            SwitchRow("Default destination", isDefault, enabled = !row.isDefault) { isDefault = it }
+            if (row.isDefault) {
+                Text("Apps set to Default upload here. To change that, turn this on for another destination.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
 
             Button(onClick = { runTask("Save") { "Saved" } }, enabled = valid && !busy) { Text("Save") }
 

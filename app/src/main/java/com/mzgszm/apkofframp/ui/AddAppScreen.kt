@@ -2,6 +2,7 @@ package com.mzgszm.apkofframp.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,11 +17,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -84,8 +88,15 @@ fun AddAppScreen(onBack: () -> Unit, onAdded: (String) -> Unit) {
         }
     }
 
+    val destinations by g.dao.observeDestinations().collectAsStateWithLifecycle(emptyList())
+
     pending?.let { c ->
         var uploadNow by remember(c) { mutableStateOf(true) }
+        // Null is the default destination. Picked here so the first upload already goes to the right place.
+        var destId by remember(c) { mutableStateOf<Long?>(null) }
+        var destMenu by remember(c) { mutableStateOf(false) }
+        // Re-adding a monitored package by ID starts from the destination it already had.
+        LaunchedEffect(c) { destId = g.dao.app(c.pkg)?.destinationId }
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text("Add ${c.label}") },
@@ -93,6 +104,23 @@ fun AddAppScreen(onBack: () -> Unit, onAdded: (String) -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(c.pkg, style = MaterialTheme.typography.bodySmall)
                     if (!c.installed) Text("Not installed. It shows as Waiting until it appears.")
+                    if (destinations.size > 1) {
+                        val defaultName = destinations.firstOrNull { it.isDefault }?.name
+                        val label = destinations.firstOrNull { it.id == destId }?.name
+                            ?: "Default${defaultName?.let { " ($it)" } ?: ""}"
+                        Box {
+                            OutlinedButton(onClick = { destMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Destination: $label", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            DropdownMenu(expanded = destMenu, onDismissRequest = { destMenu = false }) {
+                                DropdownMenuItem(text = { Text("Default${defaultName?.let { " ($it)" } ?: ""}") },
+                                    onClick = { destId = null; destMenu = false })
+                                destinations.forEach { d ->
+                                    DropdownMenuItem(text = { Text(d.name) }, onClick = { destId = d.id; destMenu = false })
+                                }
+                            }
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Upload the installed version now", Modifier.weight(1f))
                         Switch(checked = uploadNow, onCheckedChange = { uploadNow = it })
@@ -108,7 +136,7 @@ fun AddAppScreen(onBack: () -> Unit, onAdded: (String) -> Unit) {
                 Button(onClick = {
                     scope.launch {
                         try {
-                            g.repo.addApp(c.pkg, c.label, uploadNow)
+                            g.repo.addApp(c.pkg, c.label, uploadNow, destId)
                             pending = null
                             onAdded(c.pkg)
                         } catch (e: Exception) {

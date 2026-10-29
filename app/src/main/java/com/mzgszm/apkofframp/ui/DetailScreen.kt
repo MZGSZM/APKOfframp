@@ -136,7 +136,7 @@ fun DetailScreen(pkg: String, onBack: () -> Unit) {
             }
             item {
                 AppSettingsCard(a, destinations, settings.defaultKeep) { destId, folder, keep ->
-                    act { g.repo.updateAppSettings(pkg, destId, folder, keep); "Saved" }
+                    act { g.repo.updateAppSettings(pkg, destId, folder, keep) }
                 }
             }
             item {
@@ -163,7 +163,11 @@ fun DetailScreen(pkg: String, onBack: () -> Unit) {
             if (versions.isEmpty()) {
                 item { Text("Nothing uploaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            items(versions, key = { "v${it.id}" }) { v -> VersionRow(v) }
+            items(versions, key = { "v${it.id}" }) { v ->
+                // With more than one destination, say which server each copy is on.
+                val on = if (destinations.size > 1) destinations.firstOrNull { it.id == v.destinationId }?.name else null
+                VersionRow(v, on)
+            }
             item { Text("History", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
             if (history.isEmpty()) {
                 item { Text("No uploads yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -204,7 +208,7 @@ fun outcomeLabel(o: Outcome) = when (o) {
 }
 
 @Composable
-private fun VersionRow(v: VersionEntity) {
+private fun VersionRow(v: VersionEntity, destinationName: String?) {
     val ctx = LocalContext.current
     val pruned = v.state == VersionState.PRUNED
     Card(Modifier.fillMaxWidth().alpha(if (pruned) 0.5f else 1f)) {
@@ -218,7 +222,8 @@ private fun VersionRow(v: VersionEntity) {
                     },
                     style = MaterialTheme.typography.titleSmall,
                 )
-                Text("${formatSize(v.size)}  ·  ${formatTime(v.uploadTime)}", style = MaterialTheme.typography.bodySmall,
+                Text("${formatSize(v.size)}  ·  ${formatTime(v.uploadTime)}" + (destinationName?.let { "  ·  $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (v.certChanged) {
                     Text("Signing certificate changed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -240,11 +245,16 @@ private fun AppSettingsCard(
     defaultKeep: Int,
     onSave: (Long?, String?, Int?) -> Unit,
 ) {
-    var destId by remember(app) { mutableStateOf(app.destinationId) }
-    var folder by remember(app) { mutableStateOf(app.pathOverride.orEmpty()) }
-    var useDefaultKeep by remember(app) { mutableStateOf(app.keepVersions == null) }
-    var keepAll by remember(app) { mutableStateOf(app.keepVersions == Naming.KEEP_ALL) }
-    var keepText by remember(app) { mutableStateOf((app.keepVersions?.takeIf { it >= 0 } ?: defaultKeep).toString()) }
+    // Keyed on the saved values only. Keying on the whole row reset every field each time the upload
+    // progress or status changed, so a destination picked during an upload snapped back to Default
+    // before Save, and Save then stored Default.
+    var destId by remember(app.packageName, app.destinationId) { mutableStateOf(app.destinationId) }
+    var folder by remember(app.packageName, app.pathOverride) { mutableStateOf(app.pathOverride.orEmpty()) }
+    var useDefaultKeep by remember(app.packageName, app.keepVersions) { mutableStateOf(app.keepVersions == null) }
+    var keepAll by remember(app.packageName, app.keepVersions) { mutableStateOf(app.keepVersions == Naming.KEEP_ALL) }
+    var keepText by remember(app.packageName, app.keepVersions, defaultKeep) {
+        mutableStateOf((app.keepVersions?.takeIf { it >= 0 } ?: defaultKeep).toString())
+    }
     var menu by remember { mutableStateOf(false) }
 
     val keepValue: Int? = when {
@@ -264,7 +274,12 @@ private fun AppSettingsCard(
                 ListItem(
                     modifier = Modifier.fillMaxWidth().clickable { menu = true },
                     headlineContent = { Text("Destination") },
-                    supportingContent = { Text(selected?.name ?: "Default${defaultName?.let { " ($it)" } ?: " (none set)"}") },
+                    supportingContent = {
+                        Text(
+                            (selected?.name ?: "Default${defaultName?.let { " ($it)" } ?: " (none set)"}") +
+                                if (destId != app.destinationId) "\nNot saved yet. After Save, uploads go here, and an app already uploaded elsewhere is sent here too." else "",
+                        )
+                    },
                 )
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Default") }, onClick = { destId = null; menu = false })

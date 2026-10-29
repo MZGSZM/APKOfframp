@@ -10,6 +10,7 @@ import com.mzgszm.apkofframp.core.Ledger
 import com.mzgszm.apkofframp.core.PublishResult
 import com.mzgszm.apkofframp.core.RemoteConfig
 import com.mzgszm.apkofframp.data.AppEntity
+import com.mzgszm.apkofframp.data.DestinationEntity
 import com.mzgszm.apkofframp.data.OfframpDb
 import com.mzgszm.apkofframp.data.UploadEntity
 import com.mzgszm.apkofframp.data.VersionEntity
@@ -69,5 +70,34 @@ class DatabaseLinksTest {
         assertEquals(listOf(VersionState.CURRENT, VersionState.ARCHIVED, VersionState.PRUNED), v.map { it.state })
         assertEquals("", v[2].url)
         assertEquals(3, dao.observeHistoryFor(pkg).first().size)
+    }
+
+    /** A destination picked while an upload ran must survive the upload being recorded. */
+    @Test fun recordingAnUploadKeepsTheChosenDestination() = runBlocking {
+        val second = dao.saveDestination(DestinationEntity(name = "Second", baseUrl = "https://second/apks/"))
+        dao.saveDestination(DestinationEntity(name = "First", baseUrl = "https://h/apks/", isDefault = true))
+        dao.upsertApp(AppEntity(pkg, "X"))
+        // The worker read the row here, before the user changed the destination.
+        val staleRow = dao.app(pkg)!!
+        dao.setAppSettings(pkg, second, "custom", 5)
+
+        val upload = UploadEntity(workId = "w9", packageName = pkg, displayName = "X", versionCode = 9, versionName = "9", startTime = 9)
+        dao.recordPublished(
+            staleRow.copy(lastVersionCode = 9, lastVersionName = "9", lastUploadTime = 9),
+            emptyList(), null, upload.copy(id = dao.insertUpload(upload)),
+        )
+
+        val row = dao.app(pkg)!!
+        assertEquals(second, row.destinationId)
+        assertEquals("custom", row.pathOverride)
+        assertEquals(5, row.keepVersions)
+        assertEquals(9L, row.lastVersionCode)
+    }
+
+    @Test fun theDefaultCannotBeSwitchedOffDirectly() = runBlocking {
+        val a = dao.saveDestination(DestinationEntity(name = "A", baseUrl = "https://a/apks/"))
+        dao.saveDestination(DestinationEntity(name = "B", baseUrl = "https://b/apks/"))
+        dao.saveDestination(dao.destination(a)!!.copy(isDefault = false))
+        assertEquals(a, dao.defaultDestination()?.id)
     }
 }

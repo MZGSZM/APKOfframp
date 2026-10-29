@@ -123,6 +123,14 @@ Instant mode keeps a permanent notification and reacts within seconds. It starts
 
 Each app can override the destination, the folder (relative to the destination URL), and how many older versions are kept.
 
+## More than one destination
+
+With two or more destinations, the Add app dialog asks which one the app uploads to, so the first upload already goes to the right server. Default means whichever destination is marked default.
+
+Changing an app's destination or folder later sends the installed version to the new place straight away, since the new folder would otherwise sit empty until the app's next update. Anything still queued or running for the old place is cancelled. Files already on the old server stay where they are, and the detail screen shows which destination each kept version is on. An app that was only given a baseline and never uploaded just switches; its next update goes to the new place.
+
+The default destination's own Default switch is locked on. To move the default, turn it on for another destination.
+
 ## Build it yourself
 
 Prerequisites: JDK 17 or newer (CI uses 21) and the Android SDK. Android Studio brings both. The build uses the Gradle wrapper, so nothing else.

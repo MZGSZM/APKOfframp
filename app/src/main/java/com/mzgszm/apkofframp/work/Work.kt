@@ -43,8 +43,10 @@ object Work {
     /**
      * One unique job per package and version code, so a sweep and an instant-mode event
      * cannot both start an upload of the same version. KEEP leaves a queued or running job alone.
+     * [replace] swaps out a job for the same version instead, for when the upload's destination changed:
+     * KEEP would let a job that already picked the old destination finish there and drop the new request.
      */
-    fun enqueueUpload(context: Context, pkg: String, versionCode: Long, force: Boolean, settings: Settings) {
+    fun enqueueUpload(context: Context, pkg: String, versionCode: Long, force: Boolean, settings: Settings, replace: Boolean = false) {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setConstraints(constraints(settings))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
@@ -52,7 +54,11 @@ object Work {
             .addTag(tagFor(pkg))
             .build()
         WorkManager.getInstance(context)
-            .enqueueUniqueWork(Naming.uploadWorkName(pkg, versionCode), ExistingWorkPolicy.KEEP, req)
+            .enqueueUniqueWork(
+                Naming.uploadWorkName(pkg, versionCode),
+                if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+                req,
+            )
     }
 
     suspend fun isQueued(context: Context, pkg: String, versionCode: Long): Boolean =

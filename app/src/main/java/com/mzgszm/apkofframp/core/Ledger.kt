@@ -12,6 +12,15 @@ data class LinkUpdate(val id: Long, val remotePath: String, val url: String, val
  * and the new upload becomes the only current version.
  */
 object Ledger {
+    /**
+     * True when a recorded link points inside [folder] on [remote]: the current file or anything in older/.
+     * Rotation only touches that folder, so only those records may change after a publish there.
+     * Records from another destination, or from this one before its folder changed, keep their links.
+     * Matching on the link rather than the destination ID also covers two destinations for the same folder.
+     */
+    fun inFolder(remote: RemoteConfig, folder: List<String>, url: String): Boolean =
+        url.isNotEmpty() && url.startsWith(remote.url(folder, dir = true))
+
     fun afterPublish(remote: RemoteConfig, folder: List<String>, existing: List<KeptLink>, result: PublishResult): List<LinkUpdate> {
         val moved = result.archived.associate { a ->
             Naming.vpath(folder + a.fromName) to a.toPath

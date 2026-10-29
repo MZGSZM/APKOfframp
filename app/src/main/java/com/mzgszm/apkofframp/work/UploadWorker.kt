@@ -19,6 +19,7 @@ import com.mzgszm.apkofframp.core.copyparty.PermissionMissingException
 import com.mzgszm.apkofframp.core.copyparty.VerifyFailedException
 import com.mzgszm.apkofframp.data.AppEntity
 import com.mzgszm.apkofframp.data.AppStatus
+import com.mzgszm.apkofframp.data.DestinationEntity
 import com.mzgszm.apkofframp.data.Outcome
 import com.mzgszm.apkofframp.data.UploadEntity
 import com.mzgszm.apkofframp.data.VersionEntity
@@ -53,8 +54,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val app = dao.app(pkg) ?: return@withContext Result.success()
         if (!app.enabled && !force) return@withContext Result.success()
 
-        val dest = g.repo.destinationFor(app)
-        if (dest == null) {
+        // Resolved again from a fresh read right before publishing; see below.
+        var dest: DestinationEntity = g.repo.destinationFor(app) ?: run {
             fail(app, "No destination. Add one in Settings.", retryable = false)
             return@withContext Result.failure()
         }
@@ -79,7 +80,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             return@withContext Result.success()
         }
 
-        val history = dao.uploadByWork(id.toString()) ?: run {
+        var history = dao.uploadByWork(id.toString()) ?: run {
             val snap0 = g.installed.snapshot(pkg)
             val row = UploadEntity(
                 workId = id.toString(), packageName = pkg, displayName = app.displayName,
@@ -118,7 +119,34 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             val certChanged = app.lastCertDigest != null && done.certDigest != null &&
                 app.lastCertDigest != done.certDigest
 
-            val target = g.repo.target(app) ?: throw IllegalStateException("No destination")
+            // The settle wait and the extract can take minutes. Read the app row again so a destination
+            // or folder picked in the meantime is the one this upload goes to, not the one it started with.
+            val latest = dao.app(pkg) ?: return@withContext Result.success()
+            val target = g.repo.target(latest) ?: throw IllegalStateException("No destination")
+            if (target.dest.id != dest.id) {
+                dest = target.dest
+                if (dest.authFailed) {
+                    finishHistory(history, "Password rejected by ${dest.name}")
+                    dao.setStatus(pkg, AppStatus.FAILED, "Password rejected by ${dest.name}. Edit that destination to retry.")
+                    g.notifier.cancelProgress(pkg)
+                    return@withContext Result.failure()
+                }
+                history = history.copy(destinationId = dest.id)
+                dao.updateUpload(history)
+            }
+
+            // The previous version is the one current in this folder, which is not always the app's last
+            // upload: after a destination change the last upload sits on the old server.
+            val liveBefore = dao.liveVersions(pkg)
+            val here = liveBefore.filter { Ledger.inFolder(target.remote, target.folder, it.url) }
+            val previous = here.filter { it.state == VersionState.CURRENT }.maxByOrNull { it.versionCode }
+                ?.let { PreviousVersion(it.versionName, it.versionCode) }
+                ?: if (liveBefore.isEmpty()) {
+                    latest.lastVersionCode?.takeIf { latest.lastUploadTime != null }?.let { PreviousVersion(latest.lastVersionName, it) }
+                } else {
+                    null
+                }
+
             val pub = g.repo.publisher(target.remote)
             val store = DbStageStore(pkg, s.versionCode)
             var lastPct = -1
@@ -132,8 +160,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     ext = done.ext,
                     folder = target.folder,
                     keep = target.keep,
-                    previous = app.lastVersionCode?.takeIf { app.lastUploadTime != null }
-                        ?.let { PreviousVersion(app.lastVersionName, it) },
+                    previous = previous,
                     lmodSeconds = s.lastUpdateTime / 1000,
                     hashVerify = dest.hashVerify != false,
                 ),
@@ -153,7 +180,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
             // Record.
             val now = System.currentTimeMillis()
-            val live = dao.liveVersions(pkg)
+            // Only records in the folder that was just rotated change. Copies on other destinations stay current there.
+            val live = dao.liveVersions(pkg).filter { Ledger.inFolder(target.remote, target.folder, it.url) }
             val updates = Ledger.afterPublish(
                 target.remote, target.folder,
                 live.map { KeptLink(it.id, it.remotePath, it.url, it.state == VersionState.CURRENT, false) },

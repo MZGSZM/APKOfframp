@@ -83,15 +83,20 @@ class Repo(private val g: Graph) {
 
     // Apps
 
-    suspend fun addApp(pkg: String, label: String, uploadNow: Boolean) {
+    /**
+     * Adds or re-adds an app. [destinationId] null means the default destination. It is set before
+     * the first upload is queued, so "upload now" goes to the chosen destination from the start.
+     */
+    suspend fun addApp(pkg: String, label: String, uploadNow: Boolean, destinationId: Long? = null) {
         require(Naming.isValidPackage(pkg)) { "Not a valid package ID" }
+        if (destinationId != null) requireNotNull(dao.destination(destinationId)) { "That destination no longer exists" }
         val existing = dao.app(pkg)
         val snap = g.installed.snapshot(pkg)
         val row = AppEntity(
             packageName = pkg,
             displayName = snap?.label ?: label.ifBlank { pkg },
             enabled = true,
-            destinationId = existing?.destinationId,
+            destinationId = destinationId,
             pathOverride = existing?.pathOverride,
             keepVersions = existing?.keepVersions,
             lastVersionCode = existing?.lastVersionCode ?: if (!uploadNow) snap?.versionCode else null,
@@ -115,12 +120,51 @@ class Repo(private val g: Graph) {
         g.extractor.cleanupOthers(pkg, -1)
     }
 
-    suspend fun updateAppSettings(pkg: String, destinationId: Long?, pathOverride: String?, keep: Int?) {
-        val app = dao.app(pkg) ?: return
+    /**
+     * Saves an app's upload settings and returns a line for the snackbar.
+     *
+     * When the destination or folder changes, the installed version is sent to the new place:
+     * any job still headed for the old one is cancelled, and a forced upload replaces it.
+     * Without that, a job that had already picked the old destination finished there, and the
+     * new destination got nothing until the app's next update.
+     */
+    suspend fun updateAppSettings(pkg: String, destinationId: Long?, pathOverride: String?, keep: Int?): String {
+        val app = dao.app(pkg) ?: return "App not found"
         val folder = pathOverride?.trim()?.trim('/')?.ifEmpty { null }
-        if (folder != null) require(folder.split('/').none { it == "." || it == ".." }) { "Folder cannot contain . or .." }
-        dao.upsertApp(app.copy(destinationId = destinationId, pathOverride = folder, keepVersions = keep))
-        if (app.status == AppStatus.PAUSED) retestAndResume(pkg)
+        if (folder != null) require(folder.split('/').none { it.trim() == "." || it.trim() == ".." }) { "Folder cannot contain . or .." }
+        if (destinationId != null) requireNotNull(dao.destination(destinationId)) { "That destination no longer exists" }
+
+        val before = runCatching { target(app) }.getOrNull()
+        dao.setAppSettings(pkg, destinationId, folder, keep)
+        val updated = dao.app(pkg) ?: return "Saved"
+        val after = runCatching { target(updated) }.getOrNull()
+
+        val moved = after != null && (before == null || before.remote.url(before.folder, dir = true) != after.remote.url(after.folder, dir = true))
+        if (!moved) {
+            if (updated.status == AppStatus.PAUSED) retestAndResume(pkg)
+            return "Saved"
+        }
+        val where = after!!.dest.name
+
+        Work.cancelFor(g.app, pkg)
+        dao.resetStage(pkg)
+        g.notifier.cancelProgress(pkg)
+
+        // A pause belongs to the old destination's permissions. Check the new one before sending anything.
+        if (updated.status == AppStatus.PAUSED) {
+            retestAndResume(pkg)?.let { return "Saved. $where: $it" }
+        }
+        if (after.dest.authFailed) return "Saved. The password for $where was rejected; edit that destination first."
+        if (!updated.enabled) return "Saved. Turn the app on, then Upload now to send it to $where."
+
+        val snap = g.installed.snapshot(pkg) ?: return "Saved. It uploads to $where once it is installed."
+        val sentBefore = updated.lastUploadTime != null ||
+            updated.status == AppStatus.PENDING || updated.status == AppStatus.UPLOADING || updated.status == AppStatus.FAILED
+        if (!sentBefore) return "Saved. The next update uploads to $where."
+
+        dao.markQueued(pkg)
+        Work.enqueueUpload(g.app, pkg, snap.versionCode, force = true, settings = g.settings.current(), replace = true)
+        return "Saved. Uploading ${snap.versionName ?: snap.versionCode} to $where."
     }
 
     suspend fun setEnabled(pkg: String, enabled: Boolean) {
@@ -145,8 +189,7 @@ class Repo(private val g: Graph) {
         val last = app.lastVersionCode
         if (last == null && !app.uploadOnAppear) {
             // Added without "upload now" while not installed: the version it appears with is the baseline.
-            dao.upsertApp(app.copy(lastVersionCode = snap.versionCode, lastVersionName = snap.versionName,
-                status = AppStatus.UP_TO_DATE, lastError = null))
+            dao.setBaseline(pkg, snap.versionCode, snap.versionName)
             return
         }
         if (!Naming.shouldUpload(snap.versionCode, last)) {
@@ -169,13 +212,13 @@ class Repo(private val g: Graph) {
         val app = dao.app(pkg) ?: return
         val snap = g.installed.snapshot(pkg) ?: throw IllegalStateException("${app.displayName} is not installed")
         if (destinationFor(app) == null) throw IllegalStateException("Add a destination in Settings first")
-        dao.upsertApp(app.copy(failedVersionCode = null, status = AppStatus.PENDING, lastError = null))
+        dao.markQueued(pkg)
         Work.enqueueUpload(g.app, pkg, snap.versionCode, force = true, settings = g.settings.current())
     }
 
     suspend fun retry(pkg: String) {
         val app = dao.app(pkg) ?: return
-        dao.upsertApp(app.copy(failedVersionCode = null, lastError = null))
+        dao.clearFailure(pkg)
         destinationFor(app)?.let { if (it.authFailed) return }
         if (app.status == AppStatus.PAUSED) retestAndResume(pkg) else {
             dao.setStatus(pkg, AppStatus.PENDING, null)
