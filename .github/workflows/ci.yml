@@ -23,7 +23,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
 
       # The copyparty end-to-end tests run against a throwaway server.
       - uses: actions/setup-python@v7
